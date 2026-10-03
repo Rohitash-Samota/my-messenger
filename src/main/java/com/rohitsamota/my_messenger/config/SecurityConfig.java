@@ -33,9 +33,12 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers(HttpMethod.POST,
-                            "/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout")
-                            .permitAll()
+                    .requestMatchers(HttpMethod.POST,
+                        "/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout")
+                        .permitAll()
+                    .requestMatchers(
+                        "/v3/api-docs/**", "/v3/api-docs.yaml", "/swagger-ui/**", "/swagger-ui.html")
+                        .permitAll()
                     .requestMatchers("/error").permitAll()
                     .requestMatchers("/api/admin/**").hasRole("ADMIN")
                     .anyRequest().authenticated())
