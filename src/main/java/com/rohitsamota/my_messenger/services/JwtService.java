@@ -56,6 +56,10 @@ public class JwtService {
 		return expirationMs / 1000;
 	}
 
+	public long extractExpirationEpochMillis(String token) {
+		return extractClaim(token, Claims::getExpiration).getTime();
+	}
+
 	private <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
 		return claimsResolver.apply(extractAllClaims(token));
 	}

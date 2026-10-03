@@ -30,6 +30,7 @@ import com.rohitsamota.my_messenger.entity.Message;
 import com.rohitsamota.my_messenger.entity.MessageReceipt;
 import com.rohitsamota.my_messenger.enums.ConversionType;
 import com.rohitsamota.my_messenger.enums.MessageStatus;
+import com.rohitsamota.my_messenger.enums.MessageType;
 import com.rohitsamota.my_messenger.event.EventEnvelope;
 import com.rohitsamota.my_messenger.event.EventTypes;
 import com.rohitsamota.my_messenger.event.MessageCreatedPayload;
@@ -50,6 +51,8 @@ public class MessageService {
     private final GroupMemberRepository groupMemberRepository;
     private final UserInfoRepository userRepository;
     private final OutboxService outboxService;
+    private final RealtimeEventPublisher realtimeEventPublisher;
+    private final MediaStorageService mediaStorageService;
 
     public MessageService(
             MessageRepoI messageRepository,
@@ -58,7 +61,9 @@ public class MessageService {
             ConversationParticipantRepository participantRepository,
             GroupMemberRepository groupMemberRepository,
             UserInfoRepository userRepository,
-            OutboxService outboxService) {
+            OutboxService outboxService,
+            RealtimeEventPublisher realtimeEventPublisher,
+            MediaStorageService mediaStorageService) {
         this.messageRepository = messageRepository;
         this.receiptRepository = receiptRepository;
         this.conversionRepository = conversionRepository;
@@ -66,6 +71,8 @@ public class MessageService {
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
         this.outboxService = outboxService;
+        this.realtimeEventPublisher = realtimeEventPublisher;
+        this.mediaStorageService = mediaStorageService;
     }
 
     @Transactional(readOnly = true)
@@ -117,6 +124,8 @@ public class MessageService {
             assertIdempotentReplay(existing, conversionId, request, content);
             return responseForSender(existing);
         }
+
+        validateMessageContent(conversionId, request.messageType(), content);
 
         if (request.parentMessageId() != null
                 && messageRepository.findByIdAndConversionId(
@@ -178,6 +187,7 @@ public class MessageService {
                         content,
                         Instant.now()));
         outboxService.enqueueConversationEvent(conversionId, event);
+        realtimeEventPublisher.publishAfterCommit(event, activeParticipantIds);
 
         return toResponse(message, senderUserId, receipts);
     }
@@ -247,6 +257,9 @@ public class MessageService {
                             targetStatus,
                             Instant.now()));
             outboxService.enqueueConversationEvent(conversionId, event);
+            realtimeEventPublisher.publishAfterCommit(
+                    event,
+                    activeParticipantIds(conversion));
         }
 
         return new MessageStateResponseDto(
@@ -379,6 +392,21 @@ public class MessageService {
                     HttpStatus.CONFLICT,
                     "clientMessageId was already used for a different message");
         }
+    }
+
+    private void validateMessageContent(
+            Long conversionId,
+            MessageType messageType,
+            String content) {
+        if (messageType == MessageType.TEXT) {
+            return;
+        }
+        if (messageType == MessageType.DOCUMENT) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Document uploads are not supported");
+        }
+        mediaStorageService.validateMessageReference(conversionId, messageType, content);
     }
 
     private MessageResponseDto responseForSender(Message message) {

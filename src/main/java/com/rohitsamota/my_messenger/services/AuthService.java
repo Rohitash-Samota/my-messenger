@@ -21,6 +21,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.rohitsamota.my_messenger.dto.LoginRequestDto;
 import com.rohitsamota.my_messenger.dto.LoginResponseDto;
+import com.rohitsamota.my_messenger.dto.CurrentUserResponseDto;
 import com.rohitsamota.my_messenger.dto.RegisterRequestDto;
 import com.rohitsamota.my_messenger.dto.RegisterResponseDto;
 import com.rohitsamota.my_messenger.entity.User;
@@ -112,6 +113,14 @@ public class AuthService {
         if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
             redisTemplate.delete(refreshTokenKey(rawRefreshToken));
         }
+    }
+
+    @Transactional(readOnly = true)
+    public CurrentUserResponseDto currentUser(String email) {
+        User user = userRepository.findByEmailIgnoreCase(email)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED, "User not found"));
+        return CurrentUserResponseDto.from(user);
     }
 
     private RegisterResponseDto createRegisterResponse(User user) {

@@ -12,5 +12,6 @@ public record ConversionResponseDto(
         boolean archived,
         long unreadCount,
         Long lastMessageId,
-        LocalDateTime lastActivityAt) {
+        LocalDateTime lastActivityAt,
+        UserSummaryDto peer) {
 }

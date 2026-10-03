@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.rohitsamota.my_messenger.dto.LoginRequestDto;
 import com.rohitsamota.my_messenger.dto.LoginResponseDto;
+import com.rohitsamota.my_messenger.dto.CurrentUserResponseDto;
 import com.rohitsamota.my_messenger.dto.RegisterRequestDto;
 import com.rohitsamota.my_messenger.dto.RegisterResponseDto;
 import com.rohitsamota.my_messenger.services.AuthService;
@@ -54,13 +55,10 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public CurrentUserResponse currentUser(@AuthenticationPrincipal UserDetails userDetails) {
-        return new CurrentUserResponse(userDetails.getUsername());
+    public CurrentUserResponseDto currentUser(@AuthenticationPrincipal UserDetails userDetails) {
+        return authService.currentUser(userDetails.getUsername());
     }
 
     public record RefreshRequest(@NotBlank @Size(max = 128) String refreshToken) {
-    }
-
-    public record CurrentUserResponse(String email) {
     }
 }

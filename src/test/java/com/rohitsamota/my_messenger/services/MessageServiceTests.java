@@ -6,10 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 
@@ -58,6 +60,10 @@ class MessageServiceTests {
     private UserInfoRepository userRepository;
     @Mock
     private OutboxService outboxService;
+    @Mock
+    private RealtimeEventPublisher realtimeEventPublisher;
+    @Mock
+    private MediaStorageService mediaStorageService;
 
     private MessageService messageService;
 
@@ -70,7 +76,9 @@ class MessageServiceTests {
                 participantRepository,
                 groupMemberRepository,
                 userRepository,
-                outboxService);
+                outboxService,
+                realtimeEventPublisher,
+                mediaStorageService);
     }
 
     @Test
@@ -111,6 +119,9 @@ class MessageServiceTests {
         @SuppressWarnings("rawtypes")
         ArgumentCaptor<EventEnvelope> envelopeCaptor = ArgumentCaptor.forClass(EventEnvelope.class);
         verify(outboxService).enqueueConversationEvent(eq(10L), envelopeCaptor.capture());
+        verify(realtimeEventPublisher).publishAfterCommit(
+                eq(envelopeCaptor.getValue()),
+                eq(new LinkedHashSet<>(List.of(1L, 2L))));
         MessageCreatedPayload payload = (MessageCreatedPayload) envelopeCaptor.getValue().payload();
         assertEquals(List.of(2L), payload.recipientUserIds());
         assertEquals(100L, payload.messageId());
@@ -192,6 +203,36 @@ class MessageServiceTests {
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
         assertTrue(exception.getReason().contains("Conversion"));
         verify(messageRepository, never()).saveAndFlush(any(Message.class));
+    }
+
+    @Test
+    void rejectsRemoteMediaReferenceBeforePersistingMessage() {
+        User sender = user(1L, "sender@example.com");
+        Conversion conversion = directConversion(10L, 1L, 2L);
+        when(userRepository.findByEmailIgnoreCase(sender.getEmail())).thenReturn(Optional.of(sender));
+        when(conversionRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(conversion));
+        when(messageRepository.findByUserIdAndClientMessageId(1L, "media-1"))
+                .thenReturn(Optional.empty());
+        doThrow(new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Media messages must reference a local uploaded media URL"))
+                .when(mediaStorageService)
+                .validateMessageReference(10L, MessageType.IMAGE, "https://example.com/image.jpg");
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> messageService.send(
+                        sender.getEmail(),
+                        10L,
+                        new SendMessageRequestDto(
+                                "media-1",
+                                "https://example.com/image.jpg",
+                                MessageType.IMAGE,
+                                null)));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        verify(messageRepository, never()).saveAndFlush(any(Message.class));
+        verify(outboxService, never()).enqueueConversationEvent(any(), any());
     }
 
     private User user(Long id, String email) {

@@ -6,6 +6,7 @@ import java.util.Map;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
+import com.rohitsamota.my_messenger.event.ConversationCreatedPayload;
 import com.rohitsamota.my_messenger.event.EventEnvelope;
 import com.rohitsamota.my_messenger.event.EventTypes;
 import com.rohitsamota.my_messenger.event.MessageCreatedPayload;
@@ -39,10 +40,21 @@ public class ConversationEventConsumer {
             groupId = "${app.kafka.consumer-groups.notification-fanout:notification-fanout-v1}")
     public void receive(String value) {
         switch (envelopeReader.eventType(value)) {
+            case EventTypes.CONVERSATION_CREATED -> consumeConversationCreated(value);
             case EventTypes.MESSAGE_CREATED -> fanOutNotifications(value);
             case EventTypes.MESSAGE_STATE_CHANGED -> consumeStateEvent(value);
             default -> throw new IllegalArgumentException("Unsupported conversation event type");
         }
+    }
+
+    private void consumeConversationCreated(String value) {
+        EventEnvelope<ConversationCreatedPayload> envelope = envelopeReader.read(
+                value,
+                new TypeReference<EventEnvelope<ConversationCreatedPayload>>() { });
+        processedEventService.processOnce(CONSUMER_NAME, envelope.eventId(), () -> {
+            // The conversation and participant rows are already committed. This
+            // durable event is retained for future cross-service projections.
+        });
     }
 
     private void fanOutNotifications(String value) {

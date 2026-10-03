@@ -1,16 +1,20 @@
 package com.rohitsamota.my_messenger.controller;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.rohitsamota.my_messenger.dto.CreateConversationRequestDto;
 import com.rohitsamota.my_messenger.dto.ConversionCursorResponseDto;
 import com.rohitsamota.my_messenger.dto.ConversionFlagRequestDto;
 import com.rohitsamota.my_messenger.dto.ConversionResponseDto;
@@ -38,6 +42,16 @@ public class ConversionController {
             @RequestParam(defaultValue = "false") boolean archived,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit) {
         return conversionService.listForUser(userDetails.getUsername(), cursor, archived, limit);
+    }
+
+    @PostMapping
+    public ResponseEntity<ConversionResponseDto> createOrReuseDirectConversation(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody CreateConversationRequestDto request) {
+        var result = conversionService.createOrReuseDirect(userDetails.getUsername(), request);
+        return ResponseEntity
+                .status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
+                .body(result.conversation());
     }
 
     @PatchMapping("/{conversionId}/pin")

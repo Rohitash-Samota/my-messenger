@@ -78,6 +78,20 @@ public interface ConversionRepoI extends JpaRepository<Conversion, Long> {
 	@Query("select conversion from Conversion conversion where conversion.id = :id")
 	Optional<Conversion> findByIdForUpdate(@Param("id") Long id);
 
+    @Query("""
+            select conversion
+            from Conversion conversion
+            where conversion.conversionType = com.rohitsamota.my_messenger.enums.ConversionType.INDIVIDUAL
+              and conversion.deletedAt is null
+              and ((conversion.userId = :firstUserId and conversion.clientId = :secondUserId)
+                or (conversion.userId = :secondUserId and conversion.clientId = :firstUserId))
+            order by conversion.id asc
+            """)
+    List<Conversion> findDirectBetween(
+            @Param("firstUserId") Long firstUserId,
+            @Param("secondUserId") Long secondUserId,
+            Pageable pageable);
+
 	@Query("""
 			select conversion
 			from Conversion conversion, ConversationParticipant participant
