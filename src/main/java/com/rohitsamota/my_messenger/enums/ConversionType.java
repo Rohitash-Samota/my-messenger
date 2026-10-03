@@ -1,12 +1,12 @@
 package com.rohitsamota.my_messenger.enums;
 
-public enum GroupUserRole {
-    ADMIN("admin"),
-    MEMBER("member");
+public enum ConversionType {
+    INDIVIDUAL("individual"),
+    GROUP("group");
 
     private final String value;
 
-    GroupUserRole(String value) {
+    ConversionType(String value) {
         this.value = value;
     }
 

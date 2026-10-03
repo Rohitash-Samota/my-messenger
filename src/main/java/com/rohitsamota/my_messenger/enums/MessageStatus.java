@@ -1,12 +1,14 @@
 package com.rohitsamota.my_messenger.enums;
 
-public enum GroupUserRole {
-    ADMIN("admin"),
-    MEMBER("member");
+public enum MessageStatus {
+    SENT("SENT"),
+    DELIVERED("DELIVERED"),
+    READ("READ"),
+    FAILED("FAILED");
 
     private final String value;
 
-    GroupUserRole(String value) {
+    MessageStatus(String value) {
         this.value = value;
     }
 

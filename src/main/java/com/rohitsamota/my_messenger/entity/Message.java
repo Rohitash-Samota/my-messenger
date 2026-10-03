@@ -1,5 +1,6 @@
 package com.rohitsamota.my_messenger.entity;
 
+import com.rohitsamota.my_messenger.enums.MessageStatus;
 import com.rohitsamota.my_messenger.enums.MessageType;
 
 import jakarta.persistence.Column;
@@ -25,12 +26,19 @@ class Message {
     @Column(name="parent_message_id", nullable=true)
     private Long parentMessageId;
 
+    @Column(name = "conversion_id", nullable=true)
+    private Long conversionId;
+
     @Column(name = "content", nullable=true, length=1000)
     private String content;
 
     @Enumerated(EnumType.STRING)
     @Column(name="message_type", nullable=true, length=20)
     private MessageType messageType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name="status", nullable=false)
+    private MessageStatus status;
 
     public Long getId() {
         return id;
@@ -71,4 +79,21 @@ class Message {
     public void setMessageType(MessageType messageType) {
         this.messageType = messageType;
     }
+
+    public Long getConversionId() {
+        return conversionId;
+    }
+
+    public void setConversionId(Long conversionId) {
+        this.conversionId = conversionId;
+    }
+
+    public MessageStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(MessageStatus status) {
+        this.status = status;
+    }
+    
 }

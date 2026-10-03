@@ -2,6 +2,8 @@ package com.rohitsamota.my_messenger.entity;
 
 import java.time.LocalDateTime;
 
+import com.rohitsamota.my_messenger.enums.ConversionType;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -13,7 +15,7 @@ import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "conversions")
-class Conversion {
+public class Conversion {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -24,6 +26,9 @@ class Conversion {
 
     @Column(name="client_id",nullable=false)
     private Long clientId;
+
+    @Column(name = "conversion_type", nullable=false)
+    private ConversionType conversionType;
 
     @Column(name = "is_pin", nullable = false, columnDefinition = "boolean default false")
     private boolean isPin;
@@ -92,4 +97,11 @@ class Conversion {
         this.deletedAt = deletedAt;
     }
 
+    public ConversionType getConversionType() {
+        return conversionType;
+    }
+
+    public void setConversionType(ConversionType conversionType) {
+        this.conversionType = conversionType;
+    }
 }
