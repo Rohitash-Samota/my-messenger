@@ -11,13 +11,20 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
-@Table(name = "group_members")
-class GroupMembers {
+@Table(
+        name = "group_members",
+        indexes = {
+                @Index(name = "idx_group_members_group_active_user", columnList = "group_id,deleted_at,user_id"),
+                @Index(name = "idx_group_members_user_active_group", columnList = "user_id,deleted_at,group_id")
+        })
+public class GroupMembers {
     @Id
     @GeneratedValue(strategy=GenerationType.IDENTITY)
     private Long id;
@@ -30,7 +37,7 @@ class GroupMembers {
 
     @Enumerated(EnumType.STRING)
     @Column(name="role",nullable=false, length=50)
-    private GroupUserRole groupUserRole;
+    private GroupUserRole groupUserRole = GroupUserRole.MEMBER;
 
     @Column(name="deleted_at", nullable=true)
     private LocalDateTime deletedAt;
@@ -41,11 +48,29 @@ class GroupMembers {
     @Column(name = "created_at", nullable=false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
+    public GroupMembers() {
+    }
+
+    public GroupMembers(Long groupId, Long userId, GroupUserRole groupUserRole) {
+        this.groupId = groupId;
+        this.userId = userId;
+        this.groupUserRole = groupUserRole == null ? GroupUserRole.MEMBER : groupUserRole;
+    }
+
     @PrePersist
     void setCreationTimestamps() {
         LocalDateTime now = LocalDateTime.now();
-        createdAt = now;
+        if (createdAt == null) {
+            createdAt = now;
+        }
         updatedAt = now;
+        if (groupUserRole == null) {
+            groupUserRole = GroupUserRole.MEMBER;
+        }
     }
 
     @PreUpdate
@@ -85,5 +110,50 @@ class GroupMembers {
         this.groupUserRole = groupUserRole;
     }
 
-    
+    public LocalDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public void setDeletedAt(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
+    }
+
+    public boolean isActive() {
+        return deletedAt == null;
+    }
+
+    public void leave(LocalDateTime leftAt) {
+        this.deletedAt = leftAt == null ? LocalDateTime.now() : leftAt;
+    }
+
+    public void reactivate(GroupUserRole role) {
+        this.deletedAt = null;
+        if (role != null) {
+            this.groupUserRole = role;
+        }
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    public long getVersion() {
+        return version;
+    }
+
+    public void setVersion(long version) {
+        this.version = version;
+    }
 }

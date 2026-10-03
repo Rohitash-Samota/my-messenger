@@ -7,13 +7,17 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
-@Table(name ="groups")
-class Groups {
+@Table(
+        name = "`groups`",
+        indexes = @Index(name = "idx_groups_deleted_at", columnList = "deleted_at"))
+public class Groups {
     @Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
@@ -24,7 +28,7 @@ class Groups {
     @Column(name="`desc`", nullable=false, length=1024)
 	private String desc;
 
-	@Column(name="member_count", nullable=true)
+	@Column(name="member_count", nullable=false)
 	private int memberCount;
 
 	@Column(name = "deleted_at", nullable=true)
@@ -34,23 +38,26 @@ class Groups {
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;    
+    private LocalDateTime updatedAt;
 
-    protected Groups() {
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
+    public Groups() {
     }
 
-    public Groups(String desc, Long id, int memberCount, String name, LocalDateTime updatedAt) {
-        this.desc = desc;
-        this.id = id;
-        this.memberCount = memberCount;
+    public Groups(String name, String desc) {
         this.name = name;
-        this.updatedAt = updatedAt;
+        this.desc = desc;
     }
 
     @PrePersist
     void setCreationTimestamps() {
         LocalDateTime now = LocalDateTime.now();
-        createdAt = now;
+        if (createdAt == null) {
+            createdAt = now;
+        }
         updatedAt = now;
     }
 
@@ -115,5 +122,11 @@ class Groups {
         this.updatedAt = updatedAt;
     }
 
-	
+    public long getVersion() {
+        return version;
+    }
+
+    public void setVersion(long version) {
+        this.version = version;
+    }
 }

@@ -19,7 +19,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
-import com.rohitsamota.my_messenger.controller.AuthController.AuthResponse;
+import com.rohitsamota.my_messenger.dto.LoginRequestDto;
+import com.rohitsamota.my_messenger.dto.LoginResponseDto;
+import com.rohitsamota.my_messenger.dto.RegisterRequestDto;
+import com.rohitsamota.my_messenger.dto.RegisterResponseDto;
 import com.rohitsamota.my_messenger.entity.User;
 import com.rohitsamota.my_messenger.enums.Status;
 import com.rohitsamota.my_messenger.enums.UserRole;
@@ -56,36 +59,36 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResponse register(String email, String password, Long mobileNumber) {
-        String normalizedEmail = normalizeEmail(email);
+    public RegisterResponseDto register(RegisterRequestDto request) {
+        String normalizedEmail = normalizeEmail(request.email());
         if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Email is already registered");
         }
-        if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
+        if (request.password().getBytes(StandardCharsets.UTF_8).length > 72) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password must be at most 72 UTF-8 bytes");
         }
 
         User user = new User();
         user.setEmail(normalizedEmail);
-        user.setPassword(passwordEncoder.encode(password));
-        user.setMobileNumber(mobileNumber);
+        user.setPassword(passwordEncoder.encode(request.password()));
+        user.setMobileNumber(request.mobileNumber());
         user.setStatus(Status.ACTIVE);
         user.setUserRole(UserRole.USER);
         user = userRepository.save(user);
-        return createAuthResponse(user);
+        return createRegisterResponse(user);
     }
 
     @Transactional
-    public AuthResponse login(String email, String password) {
-        String normalizedEmail = normalizeEmail(email);
+    public LoginResponseDto login(LoginRequestDto request) {
+        String normalizedEmail = normalizeEmail(request.email());
         authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(normalizedEmail, password));
+                new UsernamePasswordAuthenticationToken(normalizedEmail, request.password()));
         User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
-        return createAuthResponse(user);
+        return createLoginResponse(user);
     }
 
-    public AuthResponse refresh(String rawRefreshToken) {
+    public LoginResponseDto refresh(String rawRefreshToken) {
         if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
         }
@@ -102,7 +105,7 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User account is disabled");
         }
 
-        return createAuthResponse(user);
+        return createLoginResponse(user);
     }
 
     public void logout(String rawRefreshToken) {
@@ -111,7 +114,7 @@ public class AuthService {
         }
     }
 
-    private AuthResponse createAuthResponse(User user) {
+    private RegisterResponseDto createRegisterResponse(User user) {
         UserDetails userDetails = userInfoService.loadUserByUsername(user.getEmail());
         String rawRefreshToken = createRefreshTokenValue();
         redisTemplate.opsForValue().set(
@@ -119,13 +122,29 @@ public class AuthService {
                 user.getEmail(),
                 Duration.ofMillis(refreshExpirationMs));
 
-        return new AuthResponse(
+        return new RegisterResponseDto(
                 jwtService.generateToken(userDetails),
                 "Bearer",
                 jwtService.getExpirationSeconds(),
                 rawRefreshToken,
                 refreshExpirationMs / 1000);
     }
+
+            private LoginResponseDto createLoginResponse(User user) {
+            UserDetails userDetails = userInfoService.loadUserByUsername(user.getEmail());
+            String rawRefreshToken = createRefreshTokenValue();
+            redisTemplate.opsForValue().set(
+                refreshTokenKey(rawRefreshToken),
+                user.getEmail(),
+                Duration.ofMillis(refreshExpirationMs));
+
+            return new LoginResponseDto(
+                jwtService.generateToken(userDetails),
+                "Bearer",
+                jwtService.getExpirationSeconds(),
+                rawRefreshToken,
+                refreshExpirationMs / 1000);
+            }
 
     private String createRefreshTokenValue() {
         byte[] randomBytes = new byte[64];
