@@ -1,6 +1,8 @@
 package com.rohitsamota.my_messenger.entity;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
+import java.util.UUID;
 
 import com.rohitsamota.my_messenger.enums.MessageStatus;
 import com.rohitsamota.my_messenger.enums.MessageType;
@@ -27,7 +29,10 @@ import jakarta.persistence.Version;
                 columnNames = {"user_id", "client_message_id"}),
         indexes = {
                 @Index(name = "idx_messages_conversion_id_id", columnList = "conversion_id,id"),
-                @Index(name = "idx_messages_client_message_id", columnList = "client_message_id")
+                @Index(name = "idx_messages_client_message_id", columnList = "client_message_id"),
+                @Index(
+                        name = "idx_messages_conversion_media_deleted",
+                        columnList = "conversion_id,media_id,deleted_at")
         })
 public class Message {
 
@@ -50,6 +55,12 @@ public class Message {
     @Column(name = "content", nullable=true, length=1000)
     private String content;
 
+    @Column(name = "original_content_sha256", length = 64, updatable = false)
+    private String originalContentSha256;
+
+    @Column(name = "media_id", length = 36, updatable = false)
+    private String mediaId;
+
     @Enumerated(EnumType.STRING)
     @Column(name="message_type", nullable=false, length=20)
     private MessageType messageType = MessageType.TEXT;
@@ -63,6 +74,12 @@ public class Message {
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    @Column(name = "edited_at")
+    private LocalDateTime editedAt;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     @Version
     @Column(name = "version", nullable = false)
@@ -126,6 +143,66 @@ public class Message {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getOriginalContentSha256() {
+        return originalContentSha256;
+    }
+
+    public void setOriginalContentSha256(String originalContentSha256) {
+        if (originalContentSha256 == null
+                || !originalContentSha256.matches("[0-9a-f]{64}")) {
+            throw new IllegalArgumentException(
+                    "originalContentSha256 must be a lowercase SHA-256 value");
+        }
+        if (this.originalContentSha256 != null
+                && !Objects.equals(this.originalContentSha256, originalContentSha256)) {
+            throw new IllegalStateException("The original content fingerprint is immutable");
+        }
+        this.originalContentSha256 = originalContentSha256;
+    }
+
+    public String getMediaId() {
+        return mediaId;
+    }
+
+    public void setMediaId(String mediaId) {
+        if (mediaId == null) {
+            if (this.mediaId != null) {
+                throw new IllegalStateException("The media reference is immutable");
+            }
+            return;
+        }
+        String canonicalMediaId;
+        try {
+            canonicalMediaId = UUID.fromString(mediaId).toString();
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("mediaId must be a canonical UUID", exception);
+        }
+        if (!canonicalMediaId.equals(mediaId)) {
+            throw new IllegalArgumentException("mediaId must be a canonical UUID");
+        }
+        if (this.mediaId != null && !Objects.equals(this.mediaId, canonicalMediaId)) {
+            throw new IllegalStateException("The media reference is immutable");
+        }
+        this.mediaId = canonicalMediaId;
+    }
+
+    public void editContent(String content, LocalDateTime editedAt) {
+        if (deletedAt != null) {
+            throw new IllegalStateException("Deleted messages cannot be edited");
+        }
+        this.content = content;
+        this.editedAt = editedAt == null ? LocalDateTime.now() : editedAt;
+    }
+
+    public boolean softDelete(LocalDateTime deletedAt) {
+        if (this.deletedAt != null) {
+            return false;
+        }
+        this.content = null;
+        this.deletedAt = deletedAt == null ? LocalDateTime.now() : deletedAt;
+        return true;
     }
 
     public MessageType getMessageType() {
@@ -194,6 +271,26 @@ public class Message {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public LocalDateTime getEditedAt() {
+        return editedAt;
+    }
+
+    public void setEditedAt(LocalDateTime editedAt) {
+        this.editedAt = editedAt;
+    }
+
+    public LocalDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public void setDeletedAt(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
     }
 
     public long getVersion() {

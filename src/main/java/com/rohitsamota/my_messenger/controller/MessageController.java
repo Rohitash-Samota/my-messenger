@@ -5,6 +5,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.rohitsamota.my_messenger.dto.EditMessageRequestDto;
 import com.rohitsamota.my_messenger.dto.MessageCursorResponseDto;
 import com.rohitsamota.my_messenger.dto.MessageResponseDto;
 import com.rohitsamota.my_messenger.dto.MessageStateRequestDto;
@@ -53,6 +55,25 @@ public class MessageController {
             @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody SendMessageRequestDto request) {
         return messageService.send(userDetails.getUsername(), conversionId, request);
+    }
+
+    @PatchMapping("/{conversionId}/{messageId}")
+    public MessageResponseDto editMessage(
+            @PathVariable @Positive Long conversionId,
+            @PathVariable @Positive Long messageId,
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody EditMessageRequestDto request) {
+        return messageService.edit(
+                userDetails.getUsername(), conversionId, messageId, request);
+    }
+
+    @DeleteMapping("/{conversionId}/{messageId}")
+    public MessageResponseDto deleteMessage(
+            @PathVariable @Positive Long conversionId,
+            @PathVariable @Positive Long messageId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return messageService.delete(
+                userDetails.getUsername(), conversionId, messageId);
     }
 
     @PatchMapping("/{conversionId}/delivered")

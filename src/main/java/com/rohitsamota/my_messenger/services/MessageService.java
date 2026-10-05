@@ -1,5 +1,8 @@
 package com.rohitsamota.my_messenger.services;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -20,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.rohitsamota.my_messenger.dto.MessageCursorResponseDto;
+import com.rohitsamota.my_messenger.dto.EditMessageRequestDto;
 import com.rohitsamota.my_messenger.dto.MessageReceiptResponseDto;
 import com.rohitsamota.my_messenger.dto.MessageResponseDto;
 import com.rohitsamota.my_messenger.dto.MessageStateResponseDto;
@@ -34,6 +38,7 @@ import com.rohitsamota.my_messenger.enums.MessageType;
 import com.rohitsamota.my_messenger.event.EventEnvelope;
 import com.rohitsamota.my_messenger.event.EventTypes;
 import com.rohitsamota.my_messenger.event.MessageCreatedPayload;
+import com.rohitsamota.my_messenger.event.MessageMutationPayload;
 import com.rohitsamota.my_messenger.event.MessageStateChangedPayload;
 import com.rohitsamota.my_messenger.repo.ConversationParticipantRepository;
 import com.rohitsamota.my_messenger.repo.ConversionRepoI;
@@ -117,15 +122,22 @@ public class MessageService {
 
         String clientMessageId = request.clientMessageId().strip();
         String content = request.content().strip();
+        String originalContentSha256 = sha256(content);
         Message existing = messageRepository
                 .findByUserIdAndClientMessageId(senderUserId, clientMessageId)
                 .orElse(null);
         if (existing != null) {
-            assertIdempotentReplay(existing, conversionId, request, content);
+            assertIdempotentReplay(
+                    existing,
+                    conversionId,
+                    request,
+                    content,
+                    originalContentSha256);
             return responseForSender(existing);
         }
 
-        validateMessageContent(conversionId, request.messageType(), content);
+        String mediaId = validateMessageContent(
+                conversionId, request.messageType(), content);
 
         if (request.parentMessageId() != null
                 && messageRepository.findByIdAndConversionId(
@@ -156,6 +168,8 @@ public class MessageService {
         message.setClientMessageId(clientMessageId);
         message.setParentMessageId(request.parentMessageId());
         message.setContent(content);
+        message.setOriginalContentSha256(originalContentSha256);
+        message.setMediaId(mediaId);
         message.setMessageType(request.messageType());
         message.setStatus(MessageStatus.SENT);
         message = messageRepository.saveAndFlush(message);
@@ -190,6 +204,56 @@ public class MessageService {
         realtimeEventPublisher.publishAfterCommit(event, activeParticipantIds);
 
         return toResponse(message, senderUserId, receipts);
+    }
+
+    @Transactional
+    public MessageResponseDto edit(
+            String email,
+            Long conversionId,
+            Long messageId,
+            EditMessageRequestDto request) {
+        Long userId = currentUserId(email);
+        Conversion conversion = lockConversation(conversionId);
+        requireActiveMember(conversion, userId);
+        Message message = ownedMessageForMutation(conversionId, messageId, userId);
+
+        if (message.isDeleted()) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "Deleted messages cannot be edited");
+        }
+        if (message.getMessageType() != MessageType.TEXT) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Only text messages can be edited");
+        }
+
+        String content = request.content().strip();
+        if (Objects.equals(message.getContent(), content)) {
+            return responseForSender(message);
+        }
+
+        message.editContent(content, LocalDateTime.now());
+        message = messageRepository.saveAndFlush(message);
+        publishMutation(conversion, message, EventTypes.MESSAGE_UPDATED);
+        return responseForSender(message);
+    }
+
+    @Transactional
+    public MessageResponseDto delete(
+            String email,
+            Long conversionId,
+            Long messageId) {
+        Long userId = currentUserId(email);
+        Conversion conversion = lockConversation(conversionId);
+        requireActiveMember(conversion, userId);
+        Message message = ownedMessageForMutation(conversionId, messageId, userId);
+
+        if (!message.softDelete(LocalDateTime.now())) {
+            return responseForSender(message);
+        }
+
+        message = messageRepository.saveAndFlush(message);
+        publishMutation(conversion, message, EventTypes.MESSAGE_DELETED);
+        return responseForSender(message);
     }
 
     @Transactional
@@ -268,6 +332,45 @@ public class MessageService {
                 targetStatus,
                 updated,
                 unreadCount);
+    }
+
+    private Message ownedMessageForMutation(
+            Long conversionId,
+            Long messageId,
+            Long userId) {
+        Message message = messageRepository.findForMutation(conversionId, messageId)
+                .orElseThrow(this::messageNotFound);
+        if (!Objects.equals(message.getUserId(), userId)) {
+            throw messageNotFound();
+        }
+        return message;
+    }
+
+    private void publishMutation(
+            Conversion conversion,
+            Message message,
+            String eventType) {
+        EventEnvelope<MessageMutationPayload> event = EventEnvelope.v1(
+                eventType,
+                "CONVERSION",
+                conversion.getId().toString(),
+                "message:" + message.getId() + ":" + eventType.toLowerCase()
+                        + ":" + message.getVersion(),
+                new MessageMutationPayload(
+                        message.getId(),
+                        message.getConversionId(),
+                        message.getUserId(),
+                        message.getParentMessageId(),
+                        message.getClientMessageId(),
+                        message.isDeleted() ? null : message.getContent(),
+                        message.getMessageType(),
+                        message.getStatus(),
+                        message.getCreatedAt(),
+                        message.getEditedAt(),
+                        message.getDeletedAt(),
+                        message.getVersion()));
+        outboxService.enqueueConversationEvent(conversion.getId(), event);
+        realtimeEventPublisher.publishAfterCommit(event, activeParticipantIds(conversion));
     }
 
     private Message resolveBoundaryMessage(Long conversionId, Long requestedMessageId) {
@@ -367,8 +470,12 @@ public class MessageService {
     }
 
     private Conversion lockConversation(Long conversionId) {
-        return conversionRepository.findByIdForUpdate(conversionId)
+        Conversion conversion = conversionRepository.findByIdForUpdate(conversionId)
                 .orElseThrow(this::conversationNotFound);
+        if (conversion.getDeletedAt() != null) {
+            throw conversationNotFound();
+        }
+        return conversion;
     }
 
     private Long currentUserId(String email) {
@@ -382,11 +489,24 @@ public class MessageService {
             Message existing,
             Long conversionId,
             SendMessageRequestDto request,
-            String normalizedContent) {
-        boolean sameRequest = Objects.equals(existing.getConversionId(), conversionId)
-                && Objects.equals(existing.getContent(), normalizedContent)
+            String normalizedContent,
+            String requestedContentSha256) {
+        boolean sameEnvelope = Objects.equals(existing.getConversionId(), conversionId)
                 && existing.getMessageType() == request.messageType()
                 && Objects.equals(existing.getParentMessageId(), request.parentMessageId());
+        String originalContentSha256 = existing.getOriginalContentSha256();
+        boolean sameContent;
+        if (originalContentSha256 != null) {
+            sameContent = Objects.equals(originalContentSha256, requestedContentSha256);
+        } else {
+            boolean safelyComparableLegacyMessage = existing.getEditedAt() == null
+                    && existing.getDeletedAt() == null
+                    && existing.getContent() != null;
+            sameContent = safelyComparableLegacyMessage
+                    && Objects.equals(sha256(existing.getContent()), requestedContentSha256)
+                    && Objects.equals(existing.getContent(), normalizedContent);
+        }
+        boolean sameRequest = sameEnvelope && sameContent;
         if (!sameRequest) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
@@ -394,19 +514,30 @@ public class MessageService {
         }
     }
 
-    private void validateMessageContent(
+    private String validateMessageContent(
             Long conversionId,
             MessageType messageType,
             String content) {
         if (messageType == MessageType.TEXT) {
-            return;
+            return null;
         }
         if (messageType == MessageType.DOCUMENT) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Document uploads are not supported");
         }
-        mediaStorageService.validateMessageReference(conversionId, messageType, content);
+        return mediaStorageService.validateMessageReference(
+                conversionId, messageType, content);
+    }
+
+    private String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 
     private MessageResponseDto responseForSender(Message message) {
@@ -448,14 +579,21 @@ public class MessageService {
                 message.getUserId(),
                 message.getParentMessageId(),
                 message.getClientMessageId(),
-                message.getContent(),
+                message.isDeleted() ? null : message.getContent(),
                 message.getMessageType(),
                 message.getStatus(),
                 message.getCreatedAt(),
-                visibleReceipts);
+                visibleReceipts,
+                message.getEditedAt(),
+                message.getDeletedAt(),
+                message.getVersion());
     }
 
     private ResponseStatusException conversationNotFound() {
         return new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversion not found");
+    }
+
+    private ResponseStatusException messageNotFound() {
+        return new ResponseStatusException(HttpStatus.NOT_FOUND, "Message not found");
     }
 }

@@ -34,6 +34,7 @@ import com.rohitsamota.my_messenger.enums.MessageType;
 import com.rohitsamota.my_messenger.repo.ConversationParticipantRepository;
 import com.rohitsamota.my_messenger.repo.ConversionRepoI;
 import com.rohitsamota.my_messenger.repo.GroupMemberRepository;
+import com.rohitsamota.my_messenger.repo.MessageRepoI;
 import com.rohitsamota.my_messenger.repo.UserInfoRepository;
 
 @Service
@@ -77,6 +78,7 @@ public class MediaStorageService {
     private final ConversionRepoI conversionRepository;
     private final ConversationParticipantRepository participantRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final MessageRepoI messageRepository;
 
     public MediaStorageService(
             @Value("${app.media.storage-path:./local-media}") String storagePath,
@@ -86,7 +88,8 @@ public class MediaStorageService {
             UserInfoRepository userRepository,
             ConversionRepoI conversionRepository,
             ConversationParticipantRepository participantRepository,
-            GroupMemberRepository groupMemberRepository) {
+            GroupMemberRepository groupMemberRepository,
+            MessageRepoI messageRepository) {
         Path root = Path.of(storagePath).toAbsolutePath().normalize();
         this.filesDirectory = root.resolve("files");
         this.metadataDirectory = root.resolve("metadata");
@@ -97,6 +100,7 @@ public class MediaStorageService {
         this.conversionRepository = conversionRepository;
         this.participantRepository = participantRepository;
         this.groupMemberRepository = groupMemberRepository;
+        this.messageRepository = messageRepository;
     }
 
     @Transactional(readOnly = true)
@@ -217,6 +221,7 @@ public class MediaStorageService {
         Properties metadata = readMetadata(normalizedId);
         Long conversationId = parseLong(metadata, "conversationId");
         requireConversationMember(conversationId, userId);
+        requireLiveReferenceOrUnattached(conversationId, normalizedId);
 
         Path file = storedFile(normalizedId, metadata);
 
@@ -227,7 +232,7 @@ public class MediaStorageService {
                 parseLong(metadata, "size"));
     }
 
-    public void validateMessageReference(
+    public String validateMessageReference(
             Long conversationId,
             MessageType messageType,
             String content) {
@@ -269,6 +274,14 @@ public class MediaStorageService {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Uploaded media type does not match the message type");
+        }
+        return mediaId;
+    }
+
+    private void requireLiveReferenceOrUnattached(Long conversationId, String mediaId) {
+        var references = messageRepository.findByConversionIdAndMediaId(conversationId, mediaId);
+        if (!references.isEmpty() && references.stream().noneMatch(message -> !message.isDeleted())) {
+            throw mediaNotFound();
         }
     }
 

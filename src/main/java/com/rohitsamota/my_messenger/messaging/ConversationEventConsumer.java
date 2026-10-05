@@ -10,6 +10,7 @@ import com.rohitsamota.my_messenger.event.ConversationCreatedPayload;
 import com.rohitsamota.my_messenger.event.EventEnvelope;
 import com.rohitsamota.my_messenger.event.EventTypes;
 import com.rohitsamota.my_messenger.event.MessageCreatedPayload;
+import com.rohitsamota.my_messenger.event.MessageMutationPayload;
 import com.rohitsamota.my_messenger.event.MessageStateChangedPayload;
 import com.rohitsamota.my_messenger.event.NotificationPayload;
 import com.rohitsamota.my_messenger.services.OutboxService;
@@ -42,6 +43,7 @@ public class ConversationEventConsumer {
         switch (envelopeReader.eventType(value)) {
             case EventTypes.CONVERSATION_CREATED -> consumeConversationCreated(value);
             case EventTypes.MESSAGE_CREATED -> fanOutNotifications(value);
+            case EventTypes.MESSAGE_UPDATED, EventTypes.MESSAGE_DELETED -> consumeMutationEvent(value);
             case EventTypes.MESSAGE_STATE_CHANGED -> consumeStateEvent(value);
             default -> throw new IllegalArgumentException("Unsupported conversation event type");
         }
@@ -95,6 +97,17 @@ public class ConversationEventConsumer {
             // State is already committed with the outbox row. Consuming it here keeps
             // this projection idempotent and leaves a clean extension point for
             // WebSocket/mobile receipt dispatch without changing receipt semantics.
+        });
+    }
+
+    private void consumeMutationEvent(String value) {
+        EventEnvelope<MessageMutationPayload> envelope = envelopeReader.read(
+                value,
+                new TypeReference<EventEnvelope<MessageMutationPayload>>() { });
+        processedEventService.processOnce(CONSUMER_NAME, envelope.eventId(), () -> {
+            // The message mutation is already committed. Keeping this consumer
+            // idempotent prevents edit/delete events from entering the DLT and
+            // leaves a projection hook for future search indexes.
         });
     }
 

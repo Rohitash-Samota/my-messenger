@@ -6,16 +6,27 @@ import java.util.Optional;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.rohitsamota.my_messenger.entity.Message;
 
+import jakarta.persistence.LockModeType;
+
 public interface MessageRepoI extends JpaRepository<Message, Long> {
     Optional<Message> findByUserIdAndClientMessageId(Long userId, String clientMessageId);
 
     Optional<Message> findByIdAndConversionId(Long id, Long conversionId);
+
+    List<Message> findByConversionIdAndMediaId(Long conversionId, String mediaId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select message from Message message where message.id = :messageId and message.conversionId = :conversionId")
+    Optional<Message> findForMutation(
+            @Param("conversionId") Long conversionId,
+            @Param("messageId") Long messageId);
 
     boolean existsByUserIdAndClientMessageId(Long userId, String clientMessageId);
 

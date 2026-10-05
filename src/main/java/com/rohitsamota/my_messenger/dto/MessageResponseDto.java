@@ -16,5 +16,8 @@ public record MessageResponseDto(
         MessageType messageType,
         MessageStatus status,
         LocalDateTime createdAt,
-        List<MessageReceiptResponseDto> receipts) {
+        List<MessageReceiptResponseDto> receipts,
+        LocalDateTime editedAt,
+        LocalDateTime deletedAt,
+        long version) {
 }
